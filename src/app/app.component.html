@@ -1,11 +1,35 @@
-<div
-  class="list"
-  listDraggable
->
-  <div listDrag>item 1</div>
-  <div listDrag>item 2</div>
-  <div listDrag>item 3</div>
-  <div listDrag>item 4</div>
-  <div listDrag>item 5</div>
-  <div listDrag>item 6</div>
+<div class="group">
+  <div class="list-1">
+    <h1>Todo</h1>
+    <div
+      listDraggable
+      class="list"
+      #listOne="listDraggable"
+      [connectedTo]="listTwo"
+    >
+      <div listDrag>Buy groceries</div>
+      <div listDrag>Pay bills</div>
+      <div listDrag>Schedule doctor's appointment</div>
+      <div listDrag>Clean the house</div>
+      <div listDrag>Research vacation destinations</div>
+      <div listDrag>Call a friend</div>
+    </div>
+  </div>
+
+  <div class="list-1">
+    <h1>Todo</h1>
+    <div
+      listDraggable
+      class="list"
+      #listTwo="listDraggable"
+      [connectedTo]="listOne"
+    >
+      <div listDrag>Plan a birthday party</div>
+      <div listDrag>Update resume</div>
+      <div listDrag>Organize files on computer</div>
+      <div listDrag>Attend a yoga class</div>
+    </div>
+  </div>
 </div>
+
+

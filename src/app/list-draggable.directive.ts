@@ -10,6 +10,7 @@ import {
   ElementRef,
   HostListener,
   Inject,
+  Input,
   OnInit,
   Renderer2
 } from '@angular/core';
@@ -23,7 +24,8 @@ const constants = {
     DRAG_PLACEHOLDER: 'drag-placeholder',
     LIST_DRAG: 'list-drag',
     DRAGGING: 'dragging',
-    HOST_DRAG: 'host-drag'
+    HOST_DRAG: 'host-drag',
+    HOST_RECEIVE: 'host-receive'
   },
   attribute: {
     LIST_DRAG: 'listDrag'
@@ -31,7 +33,8 @@ const constants = {
 };
 
 @Directive({
-  selector: '[listDraggable]'
+  selector: '[listDraggable]',
+  exportAs: 'listDraggable'
 })
 export class ListDraggableDirective implements OnInit {
   private mouseDown = false;
@@ -44,8 +47,15 @@ export class ListDraggableDirective implements OnInit {
   private previousTarget: any = null;
   private elementSize = 0;
 
+  @Input()
+  public connectedTo?: ListDraggableDirective;
+
   @HostListener('document:mouseup')
   onMouseUp() {
+    if (this.host.nativeElement.classList.contains(constants.class.HOST_RECEIVE)) {
+      return;
+    }
+
     if (this.mouseDown) {
       this.mouseDown = false;
     }
@@ -97,6 +107,8 @@ export class ListDraggableDirective implements OnInit {
 
         this.renderer.removeAttribute(this.host.nativeElement, 'style');
         this.renderer.removeClass(this.host.nativeElement, constants.class.HOST_DRAG);
+
+        this.resetConnectedHost();
       });
     }
   }
@@ -121,6 +133,22 @@ export class ListDraggableDirective implements OnInit {
     this.dragItem.style.top = newY + 'px';
 
     /**
+     *
+     * */
+    if (!this.connectedTo?.host.nativeElement.children.length) {
+        const hostReceive = this.document
+          .elementsFromPoint(event.clientX, event.clientY)
+          .find((el) =>
+            el.classList.contains(constants.class.HOST_RECEIVE)
+          );
+
+        if (hostReceive) {
+          this.resetHost();
+          this.initializeConnectedHost(null, true);
+        }
+    }
+
+    /**
      * Отримати список елементів з точок реагування
      * після івенту і серед списку елементів знайти елемент з атрибутом "ліст-драг"
      * на місце якого збираємось поставити взятий елемент
@@ -137,15 +165,29 @@ export class ListDraggableDirective implements OnInit {
       this.previousTarget = newTarget;
 
       if (newTarget) {
-        const placeholderIndex = this.getDragPlaceholderIndex();
-        const targetIndex = this.getIndex(<HTMLElement> newTarget);
 
-        const direction =
-          placeholderIndex > targetIndex
-            ? constants.direction.UP
-            : constants.direction.DOWN;
 
-        this.dragOperation(targetIndex, placeholderIndex, direction);
+        if (newTarget.closest(`.${constants.class.HOST_RECEIVE}`)) {
+          /**
+           * Переміщення елементу серед різних списків
+           * * */
+          this.resetHost();
+          this.initializeConnectedHost(<HTMLElement> newTarget);
+
+        } else {
+          /**
+           * Переміщення елементу всередині списку
+           * * */
+          const placeholderIndex = this.getDragPlaceholderIndex();
+          const targetIndex = this.getIndex(<HTMLElement> newTarget);
+
+          const direction =
+            placeholderIndex > targetIndex
+              ? constants.direction.UP
+              : constants.direction.DOWN;
+
+          this.dragOperation(targetIndex, placeholderIndex, direction);
+        }
       }
     }
   }
@@ -211,7 +253,8 @@ export class ListDraggableDirective implements OnInit {
         DRAG_PLACEHOLDER,
         LIST_DRAG,
         DRAGGING,
-        HOST_DRAG
+        HOST_DRAG,
+        HOST_RECEIVE
       }
     } = constants;
 
@@ -231,10 +274,17 @@ export class ListDraggableDirective implements OnInit {
        */
       this.initialX = target.offsetLeft;
       this.initialY = target.offsetTop;
+
+      /**
+       *
+       * * */
+      if (this.connectedTo) {
+        this.connectedTo.initialX = this.initialX;
+        this.connectedTo.initialY = this.initialY;
+      }
+
       this.elementSize = +(Number(target.getBoundingClientRect().height).toFixed(2));
-
       this.mouseDown = true;
-
       this.dragItem = target;
 
       if (this.dragItem) {
@@ -266,6 +316,13 @@ export class ListDraggableDirective implements OnInit {
         this.dragItem.classList.add(DRAGGING);
 
         /**
+         *
+         * * */
+        if (this.connectedTo) {
+          this.connectedTo.host.nativeElement.classList.add(HOST_RECEIVE);
+        }
+
+        /**
          * Присваюємо всі початкові стилі для симуляції
          * положення елемента на тому самому місці
          * */
@@ -280,6 +337,14 @@ export class ListDraggableDirective implements OnInit {
          * */
         this.xOffset = event.clientX - this.initialX - this.document.defaultView!.scrollX;
         this.yOffset = event.clientY - this.initialY - this.document.defaultView!.scrollY;
+
+        /**
+         *
+         * * */
+        if (this.connectedTo) {
+          this.connectedTo.xOffset = this.xOffset;
+          this.connectedTo.yOffset = this.yOffset;
+        }
 
         /**
          * Вставка елементу в кінець сторінки при абсолютному позиціюванні
@@ -388,5 +453,102 @@ export class ListDraggableDirective implements OnInit {
     const replacedValue = value.match(reg);
 
     return replacedValue ? Number(replacedValue[0]) : 0;
+  }
+
+  private resetHost(): void {
+    const { HOST_DRAG, HOST_RECEIVE } = constants.class;
+
+    this.renderer.removeAttribute(this.dragPlaceholder, 'styles');
+    this.renderer.removeAttribute(this.dragPlaceholder, 'class');
+
+    this.dragPlaceholder?.remove();
+
+    this.renderer.removeAttribute(this.host.nativeElement, 'class');
+    this.renderer.removeClass(this.host.nativeElement, HOST_DRAG);
+
+    this.renderer.addClass(this.host.nativeElement, HOST_RECEIVE);
+
+    this.list.forEach(item => {
+      this.renderer.removeAttribute(item, 'class');
+      this.renderer.removeAttribute(item, 'style');
+    });
+  }
+
+  private initializeConnectedHost(
+    target: HTMLElement | null = null,
+    isListEmpty = false
+  ): void {
+    const {
+      HOST_DRAG,
+      HOST_RECEIVE,
+      DRAG_PLACEHOLDER,
+      LIST_DRAG
+    } = constants.class;
+
+    const connectedParent = this.connectedTo!.host.nativeElement;
+    connectedParent.style.userSelect = 'none';
+
+    this.renderer.removeClass(connectedParent, HOST_RECEIVE);
+    this.renderer.addClass(connectedParent, HOST_DRAG);
+
+    this.connectedTo!.list.forEach(item => {
+      this.renderer.addClass(item, LIST_DRAG);
+    });
+
+    const dragItemRect = this.dragItem?.getBoundingClientRect();
+    const startWidth = dragItemRect!.width;
+    const startHeight = dragItemRect!.height;
+
+    this.connectedTo!.dragPlaceholder = this.document.createElement('div');
+    this.connectedTo!.dragPlaceholder.style.width = startWidth + 'px';
+    this.connectedTo!.dragPlaceholder.style.height = startHeight + 'px';
+    this.connectedTo!.dragPlaceholder.classList.add(DRAG_PLACEHOLDER);
+
+    if (isListEmpty) {
+      this.renderer.appendChild(
+        connectedParent,
+        this.connectedTo?.dragPlaceholder
+      )
+    } else {
+      this.renderer.insertBefore(
+        connectedParent,
+        this.connectedTo?.dragPlaceholder,
+        target,
+        true
+      );
+    }
+
+    this.connectedTo!.elementSize = this.elementSize;
+    this.connectedTo!.dragItem = this.dragItem;
+    this.connectedTo!.mouseDown = true;
+  }
+
+  private resetConnectedHost() {
+    const connectedHost = this.connectedTo!.host.nativeElement;
+    const { HOST_RECEIVE, HOST_DRAG } = constants.class;
+
+    if (this.connectedTo) {
+      this.renderer.removeClass(connectedHost, HOST_RECEIVE);
+    }
+
+    if (this.connectedTo && this.connectedTo.mouseDown) {
+      this.connectedTo.mouseDown = false;
+
+      this.renderer.removeClass(connectedHost, HOST_RECEIVE);
+      this.renderer.removeAttribute(this.connectedTo.dragPlaceholder, 'style');
+      this.renderer.removeAttribute(this.connectedTo.dragPlaceholder, 'class');
+
+      this.connectedTo.dragPlaceholder?.remove();
+      this.renderer.removeAttribute(this.connectedTo.dragItem, 'style');
+      this.renderer.removeAttribute(this.connectedTo.dragItem, 'class');
+
+      this.connectedTo.list.forEach(item => {
+        this.renderer.removeAttribute(item, 'class');
+        this.renderer.removeAttribute(item, 'style');
+      });
+
+      this.renderer.removeAttribute(connectedHost, 'style');
+      this.renderer.removeClass(connectedHost, HOST_DRAG);
+    }
   }
 }
